@@ -1,0 +1,21 @@
+# Simulated external services. Nothing leaves the process.
+seed = 42
+time_scale = 0.05            # simulated durations x time_scale = real durations
+call_timeout_s = 180         # simulated; ~9 s real
+endpointing_pause_ms = 300   # simulated; ~15 ms real
+
+# Telephony and speech-to-text
+utterances = [4, 12]         # user utterances per call
+gap_ms = [500, 3000]
+hangup_rate = 0.05
+no_answer_rate = 0.1
+
+# LLM
+token_latency_ms = 40
+llm_hang_rate = 0.05
+llm_error_rate = 0.02
+
+# Network between runtime and API: real time, not scaled
+api_latency_ms = 20
+client_timeout_ms = 1000
+lost_response_rate = 0.03
