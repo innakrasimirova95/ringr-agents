@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 from django.db import models
@@ -10,6 +11,13 @@ class Tenant(models.Model):
     system_prompt = models.TextField(default='')
     # Billed minutes, summed from every reported call result.
     minutes_used = models.PositiveIntegerField(default=0)
+
+    # Configuración de reintentos y horarios estipulada en los contratos de cada tenant.
+    max_attempts = models.PositiveIntegerField(default=1)
+    retry_delay = models.DurationField(default=datetime.timedelta)
+    calling_hours_start = models.TimeField(null=True, blank=True)
+    calling_hours_end = models.TimeField(null=True, blank=True)
+    calling_timezone = models.CharField(max_length=50, default='Europe/Madrid')
 
 
 class Campaign(models.Model):
@@ -46,9 +54,13 @@ class Call(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     # The dialer (another service) starts pending calls once this moment has passed.
     scheduled_at = models.DateTimeField(default=timezone.now)
+    # duplicados. OneToOneField asegura en BD que una llamada no tenga más de un reintento.
+    attempt = models.PositiveIntegerField(default=1)
+    retry_of = models.OneToOneField(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='next_retry'
+    )
 
     class Meta:
-        # INSTRUCTIONS.md - Problema 1: "Las llamadas de las campañas grandes tardan en arrancar".
         # Índices compuestos para que Postgres haga Index Scan rápido evitando escaneos completos.
         indexes = [
             # Historial de llamadas del contacto:
@@ -64,6 +76,7 @@ class CallResult(models.Model):
         USER_HANGUP = 'user_hangup'
         TIMEOUT = 'timeout'
         ERROR = 'error'
+        NO_ANSWER = 'no_answer'
 
     call = models.ForeignKey(Call, on_delete=models.CASCADE, related_name='results')
     outcome = models.CharField(max_length=20, choices=Outcome.choices)

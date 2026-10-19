@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from agent_runtime.api_client import CallContext
 from agent_runtime.deps import Deps
-from agent_runtime.fakes import EndOfCall, Hangup
+from agent_runtime.fakes import EndOfCall, Hangup, NoAnswer
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ class CallOutcome(StrEnum):
     USER_HANGUP = 'user_hangup'
     TIMEOUT = 'timeout'
     ERROR = 'error'
+    NO_ANSWER = 'no_answer'
 
 
 class CallSession:
@@ -37,7 +38,12 @@ class CallSession:
     async def run(self) -> CallOutcome:
         config = self._deps.config
         transport = self._deps.transport_factory(self._ctx.call_id)
-        await transport.open()
+        try:
+            await transport.open()
+        except NoAnswer:
+            #Clasificar NoAnswer como 'no_answer' en vez de error para aplicar reintentos
+            return CallOutcome.NO_ANSWER
+
         try:
             while True:
                 event = await transport.next_event()
@@ -65,7 +71,9 @@ class CallSession:
                 async for token in self._deps.llm.stream(prompt):
                     tokens.append(token)
                 return ''.join(tokens)
-            except BaseException:
+            except Exception:
+                # Exception y no BaseException para permitir CancelledError
+                # cuando salta el timeout de la llamada, liberando recursos
                 logger.warning('LLM failed for call %s (attempt %d)', self._ctx.call_id, attempt)
                 if attempt == LLM_ATTEMPTS:
                     raise

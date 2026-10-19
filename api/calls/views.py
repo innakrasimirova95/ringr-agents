@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from calls.models import Call, CallResult, Tenant
+from calls.retries import maybe_schedule_retry
 
 HISTORY_SIZE = 20
 
@@ -19,13 +20,12 @@ HISTORY_SIZE = 20
 @require_GET
 def call_context(request: HttpRequest, call_id: uuid.UUID) -> JsonResponse:
     """Everything the runtime needs to start a call: tenant, contact, script and history."""
-    # INSTRUCTIONS.md - Problema 1: "Las llamadas de las campañas grandes tardan en arrancar".
     # Se optimiza la consulta eliminando el cuello de botella N+1:
-    # 1. select_related('campaign', 'contact'): INNER JOIN que trae datos clave en 1 sola query.
+    # INNER JOIN que trae datos clave en 1 sola query.
     call = get_object_or_404(Call.objects.select_related('campaign', 'contact'), pk=call_id)
     owner = call.campaign.ownerships.get()
 
-    # 2. prefetch_related('results'): obtiene los resultados del historial en 1 sola query.
+    # prefetch_related('results'): obtiene los resultados del historial en 1 sola query.
     previous_calls = Call.objects.filter(
         contact=call.contact, status=Call.Status.FINISHED
     ).prefetch_related('results').order_by('-created_at')[:HISTORY_SIZE]
@@ -68,9 +68,8 @@ def call_result(request: HttpRequest, call_id: uuid.UUID) -> JsonResponse:
 
     billed_minutes = math.ceil(payload['duration_s'] / 60)
 
-    # INSTRUCTIONS.md - Problema 2: "Facturación duplicada".
-    # - transaction.atomic(): garantiza atomicidad (commit completo o rollback).
-    # - select_for_update(): adquiere bloqueo pesimista de fila en Postgres para serializar.
+    # transaction.atomic(): atomicidad (commit completo o rollback).
+    # select_for_update(): adquiere bloqueo pesimista de fila en Postgres para serializar.
     with transaction.atomic():
         call = get_object_or_404(Call.objects.select_for_update(), pk=call_id)
         existing = call.results.first()
@@ -90,10 +89,15 @@ def call_result(request: HttpRequest, call_id: uuid.UUID) -> JsonResponse:
         call.save(update_fields=['status'])
 
         tenant_id = call.campaign.ownerships.values_list('tenant_id', flat=True).get()
-        # Actualización atómica con F() para evitar lost updates en llamadas concurrentes.
+        # Actualización atómica para evitar lost updates en llamadas concurrentes.
         Tenant.objects.filter(pk=tenant_id).update(
             minutes_used=models.F('minutes_used') + billed_minutes
         )
+
+        # Si la llamada finaliza sin contestar, se programa reintento según contrato.
+        if payload['outcome'] == CallResult.Outcome.NO_ANSWER:
+            tenant = Tenant.objects.get(pk=tenant_id)
+            maybe_schedule_retry(call, tenant)
 
     return JsonResponse({'status': 'ok'})
 
