@@ -20,8 +20,7 @@ from calls.models import (
     Tenant,
 )
 
-# INSTRUCTIONS.md - Problema 3: "Funcionalidad: reintentar las llamadas que nadie contesta".
-# Tabla de contratos por cliente requerida para make seed:
+# Tabla de contratos por cliente requerida:
 # - acme: 3 intentos (contando el primero), 30 min espera, 09:00-21:00 (hora Madrid)
 # - beta: 2 intentos, 2 h espera, 10:00-20:00 (hora Madrid)
 # - gamma: 1 intento (sin reintentos)

@@ -54,7 +54,7 @@ class Call(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     # The dialer (another service) starts pending calls once this moment has passed.
     scheduled_at = models.DateTimeField(default=timezone.now)
-    # duplicados. OneToOneField asegura en BD que una llamada no tenga más de un reintento.
+    # duplicados: OneToOneField asegura en BD que una llamada no tenga más de un reintento.
     attempt = models.PositiveIntegerField(default=1)
     retry_of = models.OneToOneField(
         'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='next_retry'

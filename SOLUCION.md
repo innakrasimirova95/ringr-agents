@@ -40,7 +40,7 @@ A continuación resumo las soluciones implementadas y las propuestas de mejora t
 1. **Soporte para festivos y días laborables en la franja comercial:**
    `compute_retry_scheduled_at` respeta las horas del día, pero no distingue fines de semana ni festivos nacionales. Si una llamada falla un viernes a las 21:30, se programa para el sábado a las 09:00. Integraría una comprobación de días hábiles (`weekday < 5`) y una tabla de festivos para diferir la llamada directamente al lunes.
 
-2. **Facturación inmutable (Ledger de cobros):** Sustituir el contador acumulativo actual (`Tenant.minutes_used`), que sobreescribe el total en cada llamada, por un registro de auditoría que inserte una nueva fila por cada cobro. Esto aporta trazabilidad completa de qué llamada generó cada minuto, facilita desgloses mensuales y permite gestionar rectificaciones o abonos sin destruir el historial contable.
+2. **Facturación inmutable:** Sustituir el contador acumulativo actual (`Tenant.minutes_used`), que sobreescribe el total en cada llamada, por un registro de auditoría que inserte una nueva fila por cada cobro. Esto aporta trazabilidad completa de qué llamada generó cada minuto, facilita desgloses mensuales y permite gestionar rectificaciones o abonos sin destruir el historial contable.
 
 3. ### 2. Activar el panel de administración de Django
  **Backoffice operativo con auditoría de cambios (Django Admin + History):** 

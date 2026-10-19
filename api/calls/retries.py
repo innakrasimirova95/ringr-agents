@@ -16,11 +16,7 @@ def compute_retry_scheduled_at(
     tz_name: str = 'Europe/Madrid',
 ) -> datetime.datetime:
     """Calcula la próxima hora de programación respetando la franja horaria de llamadas.
-
-    "programa un reintento en cuanto pase la espera, pero nunca fuera del horario de llamadas
-    (si la espera termina fuera de horario, el reintento sale cuando vuelva a abrir). Horario
-    de llamadas (hora de Madrid)".
-
+    
     - Si la espera termina antes de abrir: programa para la apertura del mismo día.
     - Si la espera termina dentro del horario comercial: programa en ese instante exacto.
     - Si la espera termina en el cierre o después: programa para la apertura del día siguiente.
