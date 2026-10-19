@@ -5,6 +5,7 @@ import math
 import uuid
 from typing import Any
 
+from django.db import models, transaction
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
@@ -65,14 +66,35 @@ def call_result(request: HttpRequest, call_id: uuid.UUID) -> JsonResponse:
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
 
-    call = get_object_or_404(Call, pk=call_id)
-    CallResult.objects.create(call=call, **payload)
-    call.status = Call.Status.FINISHED
-    call.save(update_fields=['status'])
+    billed_minutes = math.ceil(payload['duration_s'] / 60)
 
-    tenant = call.campaign.ownerships.get().tenant
-    tenant.minutes_used = tenant.minutes_used + math.ceil(payload['duration_s'] / 60)
-    tenant.save()
+    # INSTRUCTIONS.md - Problema 2: "Facturación duplicada".
+    # - transaction.atomic(): garantiza atomicidad (commit completo o rollback).
+    # - select_for_update(): adquiere bloqueo pesimista de fila en Postgres para serializar.
+    with transaction.atomic():
+        call = get_object_or_404(Call.objects.select_for_update(), pk=call_id)
+        existing = call.results.first()
+        if existing is not None:
+            # Idempotencia: petición repetida con datos idénticos devuelve 200 sin duplicar nada.
+            if (
+                existing.outcome == payload['outcome']
+                and math.isclose(existing.duration_s, payload['duration_s'], abs_tol=1e-4)
+                and existing.transcript == payload['transcript']
+            ):
+                return JsonResponse({'status': 'ok'})
+            # Manejo de conflictos: peticiones con resultados diferentes devuelven 409 Conflict.
+            return JsonResponse({'error': 'conflict'}, status=409)
+
+        CallResult.objects.create(call=call, **payload)
+        call.status = Call.Status.FINISHED
+        call.save(update_fields=['status'])
+
+        tenant_id = call.campaign.ownerships.values_list('tenant_id', flat=True).get()
+        # Actualización atómica con F() para evitar lost updates en llamadas concurrentes.
+        Tenant.objects.filter(pk=tenant_id).update(
+            minutes_used=models.F('minutes_used') + billed_minutes
+        )
+
     return JsonResponse({'status': 'ok'})
 
 
