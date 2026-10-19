@@ -47,6 +47,16 @@ class Call(models.Model):
     # The dialer (another service) starts pending calls once this moment has passed.
     scheduled_at = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        # INSTRUCTIONS.md - Problema 1: "Las llamadas de las campañas grandes tardan en arrancar".
+        # Índices compuestos para que Postgres haga Index Scan rápido evitando escaneos completos.
+        indexes = [
+            # Historial de llamadas del contacto:
+            models.Index(fields=['contact', 'status', '-created_at']),
+            # Búsqueda de llamadas pendientes del dialer:
+            models.Index(fields=['status', 'scheduled_at']),
+        ]
+
 
 class CallResult(models.Model):
     class Outcome(models.TextChoices):

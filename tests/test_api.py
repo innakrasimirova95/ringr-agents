@@ -1,5 +1,7 @@
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 
 from calls.models import Call, CallResult, Campaign, CampaignOwnership, Contact, ScriptStep, Tenant
 
@@ -26,6 +28,26 @@ def test_context_has_the_expected_shape(client: Client, call: Call) -> None:
         'script': [{'order': 1, 'text': 'Greet the contact.'}],
         'history': [],
     }
+
+
+# INSTRUCTIONS.md - Problema 1: "Las llamadas de las campañas grandes tardan en arrancar".
+# Valida que call_context resuelva el historial en <= 5 consultas SQL eliminando el problema N+1.
+def test_call_context_avoids_n_plus_one_queries(client: Client, call: Call) -> None:
+    finished_calls = [
+        Call(campaign=call.campaign, contact=call.contact, status=Call.Status.FINISHED)
+        for _ in range(20)
+    ]
+    Call.objects.bulk_create(finished_calls)
+    CallResult.objects.bulk_create(
+        [CallResult(call=c, outcome='completed', duration_s=60.0) for c in finished_calls]
+    )
+
+    with CaptureQueriesContext(connection) as queries:
+        response = client.get(f'/calls/{call.id}/context')
+
+    assert response.status_code == 200
+    assert len(response.json()['history']) == 20
+    assert len(queries) <= 5
 
 
 def test_result_is_stored(client: Client, call: Call) -> None:

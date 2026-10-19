@@ -18,14 +18,21 @@ HISTORY_SIZE = 20
 @require_GET
 def call_context(request: HttpRequest, call_id: uuid.UUID) -> JsonResponse:
     """Everything the runtime needs to start a call: tenant, contact, script and history."""
-    call = get_object_or_404(Call, pk=call_id)
+    # INSTRUCTIONS.md - Problema 1: "Las llamadas de las campañas grandes tardan en arrancar".
+    # Se optimiza la consulta eliminando el cuello de botella N+1:
+    # 1. select_related('campaign', 'contact'): INNER JOIN que trae datos clave en 1 sola query.
+    call = get_object_or_404(Call.objects.select_related('campaign', 'contact'), pk=call_id)
     owner = call.campaign.ownerships.get()
+
+    # 2. prefetch_related('results'): obtiene los resultados del historial en 1 sola query.
     previous_calls = Call.objects.filter(
         contact=call.contact, status=Call.Status.FINISHED
-    ).order_by('-created_at')[:HISTORY_SIZE]
+    ).prefetch_related('results').order_by('-created_at')[:HISTORY_SIZE]
     history = []
     for previous in previous_calls:
-        result = previous.results.first()
+        # Se usa .all() para leer de la caché precargada por Django y evitar queries SQL extra.
+        results = list(previous.results.all())
+        result = results[0] if results else None
         if result is not None:
             history.append({'outcome': result.outcome, 'created_at': previous.created_at})
 
